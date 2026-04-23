@@ -259,7 +259,7 @@ function App() {
                   <img
                     src={item.imageUrl}
                     alt="历史图片"
-                    className="w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                    className="h-72 w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                   />
                   <div className="p-3">
                     <p className="truncate text-xs text-slate-300">{item.prompt}</p>
