@@ -60,6 +60,8 @@ image-generator/
 ├─ tsconfig.json
 ├─ tsconfig.app.json
 ├─ tsconfig.node.json
+├─ docs/
+│  └─ 项目简介.md          # 简历 / 作品集版项目介绍
 ├─ PRD.md
 └─ TECH_DESIGN.md
 ```
