@@ -121,6 +121,8 @@ npm run electron:start # 构建后以生产模式启动 Electron
 ## Electron 桌面端
 
 - 主进程 `electron/main.cjs` 用自定义协议 `app://` 加载 `dist/`，而不是 `file://`——Chromium 在 `file://` 下不提供 IndexedDB，历史记录会失效
+- 历史记录存 `userData/history.json`，图片副本存 `userData/images/<id>.png`，渲染层通过 preload IPC 读写；图片引用为 `app://images/<id>.png`，由主进程协议处理器提供
+- 转存外链图片走主进程 `net.fetch`，不受浏览器 CORS 限制；写入采用临时文件 + rename，避免半写文件
 - 渲染层通过 preload 暴露的 `window.desktop.saveImage` 调用原生保存对话框并直接写盘；没有该 bridge 时自动回退浏览器下载
 - 桌面端请求的后端地址由 `VITE_API_BASE` 指定（复制 `.env.desktop.example` 为 `.env.desktop`），仍复用同一套 Pages Functions，密钥不入客户端
 - `electron:dev` 下 `/api` 走 Vite 代理，需本机同时运行 `npx wrangler pages dev dist`
@@ -150,6 +152,8 @@ npx wrangler pages deploy dist --project-name image-generator
 
 ## 历史记录存储说明
 
+web 端：
+
 - 存储位置：浏览器 IndexedDB（数据库 `image-generator`，`meta` 存元数据、`images` 存图片 Blob）
 - 记录内容：
   - `id`
@@ -160,6 +164,14 @@ npx wrangler pages deploy dist --project-name image-generator
   - `style`
 - 旧版本存放在 LocalStorage（key `ai-image-generator-history-v2`）的记录会在首次启动时自动迁移，并尽力把外链图片转存为本地副本
 - 生成成功后会把智谱返回的临时链接抓成本地 Blob，避免链接过期导致历史记录裂图
+
+桌面端（Electron）：
+
+- 存储位置：`app.getPath("userData")`，macOS 为 `~/Library/Application Support/image-generator/`
+- 元数据：`history.json`（写入时先写 `.tmp` 再 rename）
+- 图片副本：`images/<id>.png`，通过 `app://images/<id>.png` 渲染；仅当本地没有副本时才沿用外链
+- 旧版桌面壳的 IndexedDB 记录会在首次升级时自动迁移到文件存储
+- `history:save` 会清理超过 10 分钟的孤儿图片文件，避免删除记录后图片残留
 
 ## 注意事项
 

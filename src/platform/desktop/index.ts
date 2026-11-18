@@ -1,16 +1,21 @@
 import type { PlatformApi } from "../../services/platform";
 import { platform as webPlatform } from "../web";
+import { historyStore } from "./historyStore";
+import { directImageSrc, resolveImageSrc } from "./imageSrc";
 import { saveImage } from "./saveImage";
 
 /**
- * 桌面端（Electron）接入点，`vite build --mode desktop` 时替换 web 实现。
- *
- * 已接入：saveImage → preload 暴露的原生保存对话框 + 直接写盘。
- * 待接入（P2）：historyStore → 文件系统 / SQLite（元数据 + 图片副本落 appDataDir）。
- * 当前存储复用 IndexedDB，Electron 下由 Chromium 持久化在 userData 目录。
+ * 桌面端（Electron）实现：
+ *   historyStore    → userData/history.json + userData/images/<id>.png，经 preload IPC 访问
+ *   resolveImageSrc → app://images/<id>.png 由主进程协议处理器提供
+ *   saveImage       → 原生保存对话框 + 直接写盘
+ * 未注入 preload 时各实现内部会回退到 web 版本，方便浏览器调试。
  */
 export const platform: PlatformApi = {
   ...webPlatform,
   target: "desktop",
+  historyStore,
+  directImageSrc,
+  resolveImageSrc,
   saveImage,
 };
