@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-const ZHIPU_IMAGE_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/images/generations";
-const ZHIPU_CHAT_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-const ZHIPU_IMAGE_MODEL = "cogview-3-plus";
-const ZHIPU_OPTIMIZE_MODEL = "glm-4-flash";
+const OPTIMIZE_API = "/api/optimize";
+const IMAGE_API = "/api/image";
 const HISTORY_STORAGE_KEY = "ai-image-generator-history-v2";
 
 type ImageStyle = "realistic" | "anime";
@@ -28,8 +26,6 @@ function App() {
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
-
-  const apiKey = import.meta.env.VITE_ZHIPU_API_KEY as string | undefined;
 
   const selectedItem = useMemo(
     () => history.find((item) => item.id === selectedId) ?? null,
@@ -86,10 +82,6 @@ function App() {
   };
 
   const optimizePrompt = async () => {
-    if (!apiKey) {
-      setError("未配置 VITE_ZHIPU_API_KEY，请先在 .env 中设置。");
-      return;
-    }
     if (!prompt.trim()) {
       setError("请先输入一个简短描述。");
       return;
@@ -98,31 +90,15 @@ function App() {
     setStatus("正在优化提示词...");
     setIsLoading(true);
     try {
-      const response = await fetch(ZHIPU_CHAT_ENDPOINT, {
+      const response = await fetch(OPTIMIZE_API, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: ZHIPU_OPTIMIZE_MODEL,
-          temperature: 0.7,
-          messages: [
-            {
-              role: "system",
-              content:
-                "你是专业提示词优化助手。请把用户简短描述扩展为详细图片生成提示词。必须包含主体、风格、光线、色彩、构图和镜头细节。只输出提示词正文。",
-            },
-            {
-              role: "user",
-              content: `请优化此描述：${prompt}`,
-            },
-          ],
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
       });
 
       const data = await parseApiResponse(response);
-      const optimized = data?.choices?.[0]?.message?.content?.trim();
+      const optimized =
+        typeof data?.optimized === "string" ? data.optimized.trim() : "";
       if (!optimized) {
         throw new Error("优化结果为空");
       }
@@ -137,10 +113,6 @@ function App() {
   };
 
   const generateImage = async () => {
-    if (!apiKey) {
-      setError("未配置 VITE_ZHIPU_API_KEY，请先在 .env 中设置。");
-      return;
-    }
     if (!prompt.trim()) {
       setError("请输入提示词后再生成。");
       return;
@@ -150,21 +122,13 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(ZHIPU_IMAGE_ENDPOINT, {
+      const response = await fetch(IMAGE_API, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: ZHIPU_IMAGE_MODEL,
-          prompt: buildStyledPrompt(prompt, style),
-          size,
-          style,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, size, style }),
       });
       const data = await parseApiResponse(response);
-      const imageUrl = data?.data?.[0]?.url as string | undefined;
+      const imageUrl = data?.imageUrl as string | undefined;
       if (!imageUrl) {
         throw new Error("未返回图片地址");
       }
@@ -414,14 +378,6 @@ function App() {
   );
 }
 
-function buildStyledPrompt(prompt: string, style: ImageStyle): string {
-  const styleMap: Record<ImageStyle, string> = {
-    realistic: "风格要求：写实，自然光影，细节真实。",
-    anime: "风格要求：动漫插画，线条清晰，色彩鲜明。",
-  };
-  return `${prompt}\n${styleMap[style]}`.trim();
-}
-
 async function parseApiResponse(response: Response) {
   const isJson = response.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await response.json() : {};
@@ -444,7 +400,7 @@ function formatTimestamp(date: Date): string {
 
 function toFriendlyError(error: unknown): string {
   const text = error instanceof Error ? error.message : "发生未知错误";
-  if (text.includes("401") || text.includes("invalid")) return "API Key 无效，请检查环境变量配置。";
+  if (text.includes("401") || text.includes("invalid")) return "API Key 无效，请检查服务端 Secret 配置。";
   if (text.includes("429")) return "请求频率过高，请稍后重试。";
   if (text.includes("fetch")) return "网络异常，请检查连接后重试。";
   return `操作失败：${text}`;
