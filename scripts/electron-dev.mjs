@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const electronBinary = require("electron");
 
-const rootDir = path.dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
+const rootDir = path.dirname(
+  fileURLToPath(new URL("../package.json", import.meta.url)),
+);
 const devUrl = "http://localhost:1420";
 const viteBin = path.join(rootDir, "node_modules", "vite", "bin", "vite.js");
 
