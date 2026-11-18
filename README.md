@@ -18,17 +18,23 @@
 - Vite 5
 - Tailwind CSS
 - LocalStorage（保存历史记录）
+- Cloudflare Pages Functions（服务端代理，隔离密钥）
 - 智谱 AI API（`chat/completions` + `images/generations`）
 
 ## 项目结构
 
 ```txt
 image-generator/
+├─ functions/
+│  └─ api/
+│     ├─ optimize.ts   # 提示词优化代理
+│     └─ image.ts      # 文生图代理
 ├─ src/
 │  ├─ App.tsx
 │  ├─ main.tsx
 │  ├─ index.css
 │  └─ vite-env.d.ts
+├─ .dev.vars.example
 ├─ index.html
 ├─ package.json
 ├─ vite.config.ts
@@ -43,26 +49,51 @@ image-generator/
 
 ## 环境变量
 
-在项目根目录创建 `.env`：
+API Key 只存在于服务端，不会进入浏览器产物：
+
+- 线上：在 Cloudflare Pages 项目的 `Settings → Variables and Secrets` 中配置 Secret 类型变量 `ZHIPU_API_KEY`
+- 可选变量：`ZHIPU_CHAT_MODEL`（默认 `glm-4-flash`）、`ZHIPU_IMAGE_MODEL`（默认 `cogview-3-plus`）
+- 本地：复制 `.dev.vars.example` 为 `.dev.vars` 并填入 Key
 
 ```bash
-VITE_ZHIPU_API_KEY=your_zhipu_api_key
+cp .dev.vars.example .dev.vars
 ```
+
+切勿使用 `VITE_` 前缀存放密钥，这类变量会被 Vite 打包进前端 JS，任何访问者都能提取。
 
 ## 本地运行
 
+`/api/*` 由 Pages Functions 提供，需要同时启动 Vite 与 wrangler：
+
 ```bash
 npm install
+npm run build
+
+# 终端 1：启动 Pages Functions（默认 8788，读取 .dev.vars）
+npx wrangler pages dev dist
+
+# 终端 2：启动前端（vite 已配置 /api 代理到 8788）
 npm run dev
 ```
 
-默认会启动 Vite 开发服务器（如 `http://localhost:5173`，若端口占用会自动递增）。
+Vite 默认地址为 `http://localhost:5173`，若端口占用会自动递增。
 
 ## 构建与预览
 
 ```bash
 npm run build
-npm run preview
+npm run preview   # 仅预览静态资源，/api 接口不可用
+```
+
+## 部署
+
+项目部署在 Cloudflare Pages，Git 推送后自动构建（构建命令 `npm run build`，输出目录 `dist`），`functions/` 目录会被 Pages 自动识别为 Functions。
+
+手动部署：
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name image-generator
 ```
 
 ## 使用说明
@@ -90,6 +121,7 @@ npm run preview
 
 ## 注意事项
 
-- 未配置 `VITE_ZHIPU_API_KEY` 时，生成和优化会提示配置错误
+- 服务端未配置 `ZHIPU_API_KEY` 时，接口返回“服务端未配置 ZHIPU_API_KEY”
+- 智谱返回 401 表示 Key 失效；返回 429 通常是余额不足或未购买对应模型（如 `cogview-3-plus`）的资源包
 - 文生图通常需要 10-30 秒，请耐心等待
 - 某些图片源可能受跨域限制，下载会自动走降级策略以尽量保证成功
