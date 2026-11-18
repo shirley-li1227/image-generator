@@ -1,20 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { platform } from "@platform";
+import { StoredImage } from "./components/StoredImage";
+import {
+  generateImage as requestImage,
+  optimizePrompt as requestOptimizePrompt,
+  toFriendlyError,
+} from "./services/api";
+import type { HistoryItem, ImageSize, ImageStyle } from "./services/types";
+import { createId, formatTimestamp } from "./services/utils";
 
-const OPTIMIZE_API = "/api/optimize";
-const IMAGE_API = "/api/image";
-const HISTORY_STORAGE_KEY = "ai-image-generator-history-v2";
-
-type ImageStyle = "realistic" | "anime";
-type ImageSize = "1024x1024" | "768x1344" | "1344x768";
-
-interface HistoryItem {
-  id: string;
-  prompt: string;
-  imageUrl: string;
-  createdAt: number;
-  size: ImageSize;
-  style: ImageStyle;
-}
+const HISTORY_LIMIT = 30;
 
 function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -26,6 +21,7 @@ function App() {
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const selectedItem = useMemo(
     () => history.find((item) => item.id === selectedId) ?? null,
@@ -33,21 +29,26 @@ function App() {
   );
 
   useEffect(() => {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as HistoryItem[];
-      if (Array.isArray(parsed)) {
-        setHistory(parsed);
-      }
-    } catch {
-      setHistory([]);
-    }
+    let cancelled = false;
+    platform.historyStore
+      .load()
+      .then((items) => {
+        if (!cancelled) setHistory(items);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setIsHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-  }, [history]);
+    // 必须等首次读取完成再写回，否则会用空数组覆盖已存的历史
+    if (!isHydrated) return;
+    void platform.historyStore.save(history);
+  }, [history, isHydrated]);
 
   const openDetail = (id: string) => {
     setSelectedId(id);
@@ -67,7 +68,9 @@ function App() {
   };
 
   const deleteHistory = (id: string) => {
+    const target = history.find((item) => item.id === id);
     setHistory((prev) => prev.filter((item) => item.id !== id));
+    if (target) void platform.historyStore.deleteImage(target.imageRef);
     if (selectedId === id) {
       setSelectedId(null);
       setIsDetailOpen(false);
@@ -90,18 +93,7 @@ function App() {
     setStatus("正在优化提示词...");
     setIsLoading(true);
     try {
-      const response = await fetch(OPTIMIZE_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-
-      const data = await parseApiResponse(response);
-      const optimized =
-        typeof data?.optimized === "string" ? data.optimized.trim() : "";
-      if (!optimized) {
-        throw new Error("优化结果为空");
-      }
+      const optimized = await requestOptimizePrompt(prompt);
       setPrompt(optimized);
       setStatus("提示词优化完成。");
     } catch (e) {
@@ -122,27 +114,30 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(IMAGE_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, size, style }),
-      });
-      const data = await parseApiResponse(response);
-      const imageUrl = data?.imageUrl as string | undefined;
-      if (!imageUrl) {
-        throw new Error("未返回图片地址");
-      }
+      const imageUrl = await requestImage({ prompt, size, style });
+      const id = createId();
       const item: HistoryItem = {
-        id: crypto.randomUUID(),
+        id,
         prompt: prompt.trim(),
-        imageUrl,
+        imageRef: imageUrl,
         createdAt: Date.now(),
         size,
         style,
       };
-      setHistory((prev) => [item, ...prev].slice(0, 30));
-      setSelectedId(item.id);
+      setHistory((prev) => [item, ...prev].slice(0, HISTORY_LIMIT));
+      setSelectedId(id);
       setStatus("图片生成成功。");
+      // 智谱返回的是临时链接，尽快转存为本地副本，避免过期后历史记录裂图
+      void platform.historyStore
+        .captureRemote(imageUrl, id)
+        .then((localRef) => {
+          if (!localRef) return;
+          setHistory((prev) =>
+            prev.map((entry) =>
+              entry.id === id ? { ...entry, imageRef: localRef } : entry,
+            ),
+          );
+        });
     } catch (e) {
       setError(toFriendlyError(e));
       setStatus("");
@@ -152,34 +147,21 @@ function App() {
   };
 
   const downloadCurrent = async () => {
-    const target = selectedItem?.imageUrl;
+    const target = selectedItem?.imageRef;
     if (!target) return;
     try {
-      const response = await fetch(target);
-      if (!response.ok) throw new Error("下载失败");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ai-image-${formatTimestamp(new Date())}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setStatus("图片下载已开始。");
+      const result = await platform.saveImage(
+        target,
+        `ai-image-${formatTimestamp(new Date())}.png`,
+      );
+      setStatus(
+        result === "saved"
+          ? "图片下载已开始。"
+          : "已发起下载请求。若浏览器阻止下载，请允许弹窗后重试。",
+      );
       setError("");
     } catch {
-      // 某些跨域图片无法 fetch 为 blob，此时降级为直链下载，避免误报失败。
-      const a = document.createElement("a");
-      a.href = target;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.download = `ai-image-${formatTimestamp(new Date())}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setStatus("已发起下载请求。若浏览器阻止下载，请允许弹窗后重试。");
-      setError("");
+      setError("下载失败，请重试。");
     }
   };
 
@@ -222,8 +204,8 @@ function App() {
                   className="group mb-5 block w-full break-inside-avoid overflow-hidden rounded-2xl bg-slate-900 text-left transition hover:-translate-y-1"
                   type="button"
                 >
-                  <img
-                    src={item.imageUrl}
+                  <StoredImage
+                    imageRef={item.imageRef}
                     alt="历史图片"
                     className="h-72 w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                   />
@@ -365,8 +347,8 @@ function App() {
                   </div>
                   {selectedItem ? (
                     <>
-                      <img
-                        src={selectedItem.imageUrl}
+                      <StoredImage
+                        imageRef={selectedItem.imageRef}
                         alt="当前图片"
                         className="max-h-[64vh] w-full rounded-xl border border-slate-700 object-contain bg-slate-950"
                       />
@@ -398,40 +380,6 @@ function App() {
       </div>
     </div>
   );
-}
-
-async function parseApiResponse(response: Response) {
-  const isJson = response.headers
-    .get("content-type")
-    ?.includes("application/json");
-  const data = isJson ? await response.json() : {};
-  if (!response.ok) {
-    const serverMessage =
-      data?.error?.message ||
-      data?.message ||
-      `请求失败（HTTP ${response.status}）`;
-    throw new Error(serverMessage);
-  }
-  return data;
-}
-
-function formatTimestamp(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  const second = String(date.getSeconds()).padStart(2, "0");
-  return `${year}${month}${day}-${hour}${minute}${second}`;
-}
-
-function toFriendlyError(error: unknown): string {
-  const text = error instanceof Error ? error.message : "发生未知错误";
-  if (text.includes("401") || text.includes("invalid"))
-    return "API Key 无效，请检查服务端 Secret 配置。";
-  if (text.includes("429")) return "请求频率过高，请稍后重试。";
-  if (text.includes("fetch")) return "网络异常，请检查连接后重试。";
-  return `操作失败：${text}`;
 }
 
 export default App;
