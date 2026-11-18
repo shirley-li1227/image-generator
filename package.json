@@ -1,7 +1,9 @@
 {
   "name": "image-generator",
+  "description": "基于智谱 AI 的文生图应用，同一套渲染层同时提供 Web 与 Electron 桌面端",
+  "author": "Shirley Li",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -11,6 +13,9 @@
     "build:desktop": "tsc -b && vite build --mode desktop",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:start": "npm run build:desktop && electron .",
+    "pack": "npm run build:desktop && electron-builder --dir",
+    "dist:mac": "npm run build:desktop && electron-builder --mac --arm64",
+    "dist:win": "npm run build:desktop && electron-builder --win --x64",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,6 +29,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "electron": "^33.4.11",
+    "electron-builder": "^26.18.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",

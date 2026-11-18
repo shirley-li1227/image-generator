@@ -1,0 +1,56 @@
+appId: com.shirleyli.imagegenerator
+productName: AI 图片生成器
+copyright: Copyright © 2026 Shirley Li
+
+directories:
+  buildResources: assets
+  output: release
+
+# 只打包运行时需要的东西，避免把源码与依赖带进 asar
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+asar: true
+npmRebuild: false
+# 未配置证书时的 ad-hoc 补充签名，避免 .app 签名与资源不匹配
+afterPack: scripts/after-pack.cjs
+
+mac:
+  category: public.app-category.graphics-design
+  icon: assets/icon.png
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  # 无 Apple Developer 证书时跳过签名与公证；详见 README「打包分发」一节
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  title: ${productName}
+  contents:
+    - x: 140
+      y: 200
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+
+win:
+  icon: assets/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true

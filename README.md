@@ -128,7 +128,24 @@ npm run electron:start # 构建后以生产模式启动 Electron
 - 渲染层通过 preload 暴露的 `window.desktop.saveImage` 调用原生保存对话框并直接写盘；没有该 bridge 时自动回退浏览器下载
 - 桌面端请求的后端地址由 `VITE_API_BASE` 指定（复制 `.env.desktop.example` 为 `.env.desktop`），仍复用同一套 Pages Functions，密钥不入客户端
 - `electron:dev` 下 `/api` 走 Vite 代理，需本机同时运行 `npx wrangler pages dev dist`
-- 打包分发（代码签名、公证、自动更新）尚未配置
+- 打包与分发见下方「打包分发」一节；未配置代码签名与公证，首次打开需手动放行
+
+## 打包分发
+
+```bash
+npm run pack      # 只产出未压缩的 .app（release/mac-arm64）
+npm run dist:mac  # macOS：dmg + zip（arm64）
+npm run dist:win  # Windows：nsis 安装包（需在 Windows 下执行，macOS 需额外装 wine）
+```
+
+产物在 `release/`：`AI 图片生成器-1.0.0-arm64.dmg`（约 99 MB）、`AI 图片生成器-1.0.0-arm64-mac.zip`、`latest-mac.yml`（自动更新元数据）。
+
+- 配置集中在 `electron-builder.yml`：`appId`、`productName`（窗口/应用名）、图标 `assets/icon.png`、asar、打包文件白名单
+- 未配置 Apple Developer 证书时 `mac.identity: null` 会跳过签名，随后由 `scripts/after-pack.cjs` 补一次 **ad-hoc 签名**；否则 Electron 原始签名与重打包后的资源不匹配，别人下载会提示「已损坏」
+- ad-hoc 签名未经公证，拷贝到其他机器首次打开仍需右键 →「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/AI\ 图片生成器.app`
+- 需要正式分发时：申请 Apple Developer（$99/年，个人账号即可）→ 导入 `Developer ID Application` 证书（`CSC_LINK` / `CSC_KEY_PASSWORD`）→ 设置 `identity` 并开启公证（`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`）
+- 自动更新（`electron-updater`）要求签名包，当前只生成 `latest-mac.yml`，尚未接入
+- 打包产物的 `userData` 与开发模式一致（均为 `image-generator`），已存的历史记录不会因为换成分发包而丢失
 
 ## 部署
 
