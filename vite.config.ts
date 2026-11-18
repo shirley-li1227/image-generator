@@ -7,6 +7,8 @@ export default defineConfig(({ mode }) => {
   const isDesktop = mode === "desktop";
 
   return {
+    // 桌面端由自定义 app:// 协议加载产物，使用相对路径；web 保持根路径部署
+    base: isDesktop ? "./" : "/",
     plugins: [react()],
     resolve: {
       alias: {

@@ -20,7 +20,7 @@ export async function saveImage(
   return "saved";
 }
 
-async function readImageBlob(imageRef: string): Promise<Blob | null> {
+export async function readImageBlob(imageRef: string): Promise<Blob | null> {
   if (!isDirectImageSrc(imageRef)) {
     return historyStore.getImage(imageRef).catch(() => null);
   }

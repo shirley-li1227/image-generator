@@ -20,11 +20,17 @@
 - IndexedDB（保存历史记录与图片副本，兼容旧版 LocalStorage 数据）
 - Cloudflare Pages Functions（服务端代理，隔离密钥）
 - 智谱 AI API（`chat/completions` + `images/generations`）
+- Electron（桌面端外壳，与 web 共用同一份渲染层）
 
 ## 项目结构
 
 ```txt
 image-generator/
+├─ electron/
+│  ├─ main.cjs                # 主进程：app:// 协议、窗口、原生保存
+│  └─ preload.cjs             # 暴露 window.desktop.saveImage
+├─ scripts/
+│  └─ electron-dev.mjs        # 同时启动 Vite 与 Electron
 ├─ functions/
 │  └─ api/
 │     ├─ optimize.ts          # 提示词优化代理
@@ -67,7 +73,7 @@ API Key 只存在于服务端，不会进入浏览器产物：
 - 线上：在 Cloudflare Pages 项目的 `Settings → Variables and Secrets` 中配置 Secret 类型变量 `ZHIPU_API_KEY`
 - 可选变量：`ZHIPU_CHAT_MODEL`（默认 `glm-4-flash`）、`ZHIPU_IMAGE_MODEL`（默认 `cogview-3-plus`）
 - 本地：复制 `.dev.vars.example` 为 `.dev.vars` 并填入 Key
-- 桌面端构建：用 `VITE_API_BASE` 指定已部署的 Functions 地址（web 端留空走相对路径）
+- 桌面端构建：用 `VITE_API_BASE` 指定已部署的 Functions 地址（web 端留空走相对路径），参考 `.env.desktop.example`
 
 ```bash
 cp .dev.vars.example .dev.vars
@@ -101,16 +107,24 @@ npm run preview   # 仅预览静态资源，/api 接口不可用
 
 ## 双端构建
 
-同一份 `src/` 同时支持 web 与桌面壳（Tauri / Electron）：
+同一份 `src/` 同时支持 web 与 Electron 桌面端：
 
 ```bash
 npm run dev            # web 开发，端口 5173
-npm run dev:desktop    # 桌面壳前端，端口固定 1420
-npm run build          # web 产物
-npm run build:desktop  # 桌面端产物（@platform -> src/platform/desktop）
+npm run build          # web 产物（部署到 Cloudflare Pages）
+npm run dev:desktop    # 仅桌面端渲染层，端口固定 1420
+npm run build:desktop  # 桌面端产物（@platform -> src/platform/desktop，资源用相对路径）
+npm run electron:dev   # 一键启动 Vite + Electron（推荐）
+npm run electron:start # 构建后以生产模式启动 Electron
 ```
 
-桌面端接入时只需替换 `src/platform/desktop/` 内的三项实现（存储、图片地址解析、保存文件），UI 与业务代码不变。
+## Electron 桌面端
+
+- 主进程 `electron/main.cjs` 用自定义协议 `app://` 加载 `dist/`，而不是 `file://`——Chromium 在 `file://` 下不提供 IndexedDB，历史记录会失效
+- 渲染层通过 preload 暴露的 `window.desktop.saveImage` 调用原生保存对话框并直接写盘；没有该 bridge 时自动回退浏览器下载
+- 桌面端请求的后端地址由 `VITE_API_BASE` 指定（复制 `.env.desktop.example` 为 `.env.desktop`），仍复用同一套 Pages Functions，密钥不入客户端
+- `electron:dev` 下 `/api` 走 Vite 代理，需本机同时运行 `npx wrangler pages dev dist`
+- 打包分发（代码签名、公证、自动更新）尚未配置
 
 ## 部署
 

@@ -157,7 +157,9 @@ function App() {
       setStatus(
         result === "saved"
           ? "图片下载已开始。"
-          : "已发起下载请求。若浏览器阻止下载，请允许弹窗后重试。",
+          : result === "cancelled"
+            ? "已取消保存。"
+            : "已发起下载请求。若浏览器阻止下载，请允许弹窗后重试。",
       );
       setError("");
     } catch {

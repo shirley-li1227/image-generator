@@ -6,7 +6,7 @@ export interface ResolvedImage {
   revoke?: () => void;
 }
 
-export type SaveImageResult = "saved" | "fallback";
+export type SaveImageResult = "saved" | "cancelled" | "fallback";
 
 /**
  * 历史记录与图片副本的存储抽象。
